@@ -20,18 +20,15 @@ st.caption("Carga tu exportación de NinjaTrader para evaluar tu sesión diaria.
 
 DB_FILE = "disciply_sessions.csv"
 
-# Función de limpieza precisa para formatos decimales con comas (-41,04 $)
+# Limpieza de valores numéricos de P&L
 def parse_pnl_value(val):
     if pd.isna(val):
         return 0.0
     val_str = str(val).strip().replace('$', '').replace(' ', '')
-    
-    # Manejo de coma como separador decimal
     if ',' in val_str and '.' not in val_str:
         val_str = val_str.replace(',', '.')
     elif ',' in val_str and '.' in val_str:
         val_str = val_str.replace(',', '')
-        
     if val_str.startswith('(') and val_str.endswith(')'):
         val_str = '-' + val_str[1:-1]
     try:
@@ -51,35 +48,38 @@ worst_trade_auto = 0.0
 
 if uploaded_file is not None:
     try:
-        # Detectar separador (punto y coma de NinjaTrader)
         try:
             df_nt = pd.read_csv(uploaded_file, sep=None, engine='python')
         except:
             uploaded_file.seek(0)
             df_nt = pd.read_csv(uploaded_file, sep=';')
         
-        # Priorizar la columna 'Profit' individual sobre 'Cum. net profit'
-        profit_col = None
-        if 'Profit' in df_nt.columns:
-            profit_col = 'Profit'
-        else:
-            pnl_keywords = ['profit', 'p&l', 'ganancia', 'pnl']
+        profit_col = 'Profit' if 'Profit' in df_nt.columns else None
+        if not profit_col:
             for col in df_nt.columns:
-                if any(kw in str(col).lower() for kw in pnl_keywords) and 'cum' not in str(col).lower():
+                if 'profit' in str(col).lower() and 'cum' not in str(col).lower():
                     profit_col = col
                     break
 
         if profit_col:
             df_nt['pnl_clean'] = df_nt[profit_col].apply(parse_pnl_value)
             
-            pnl_auto = float(df_nt['pnl_clean'].sum())
-            total_trades_auto = len(df_nt)
-            winning_trades = len(df_nt[df_nt['pnl_clean'] > 0])
-            win_rate_auto = (winning_trades / total_trades_auto * 100) if total_trades_auto > 0 else 0.0
-            best_trade_auto = float(df_nt['pnl_clean'].max())
-            worst_trade_auto = float(df_nt['pnl_clean'].min())
+            # Agrupar contratos por entrada, salida e instrumento para formar trades únicos
+            group_cols = [c for c in ['Entry time', 'Exit time', 'Instrument'] if c in df_nt.columns]
             
-            st.success(f"✅ Archivo procesado con éxito ({total_trades_auto} trades en columna '{profit_col}').")
+            if group_cols:
+                trades_df = df_nt.groupby(group_cols, as_index=False)['pnl_clean'].sum()
+            else:
+                trades_df = df_nt[['pnl_clean']]
+
+            pnl_auto = float(trades_df['pnl_clean'].sum())
+            total_trades_auto = len(trades_df)
+            winning_trades = len(trades_df[trades_df['pnl_clean'] > 0])
+            win_rate_auto = (winning_trades / total_trades_auto * 100) if total_trades_auto > 0 else 0.0
+            best_trade_auto = float(trades_df['pnl_clean'].max())
+            worst_trade_auto = float(trades_df['pnl_clean'].min())
+            
+            st.success(f"✅ Archivo procesado con éxito: {total_trades_auto} trade(s) detectado(s) consolidando contratos.")
         else:
             st.warning("⚠️ Selecciona manualmente la columna de P&L:")
             selected_col = st.selectbox("Columna de P&L:", df_nt.columns)
