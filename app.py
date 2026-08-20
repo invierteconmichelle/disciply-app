@@ -4,155 +4,169 @@ import plotly.express as px
 import os
 from datetime import date
 
-# Configuración de página
-st.set_page_config(page_title="Disciply.io - MVP Prototype", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Disciply.io | Mentor Dashboard", page_icon="⚡", layout="wide")
 
-# Estilo visual en Modo Oscuro
+# CSS para estilo FinTech y Tablas limpias
 st.markdown("""
-    <style>
-    .main { background-color: #0E1117; }
-    .stMetric { background-color: #1E222D; padding: 15px; border-radius: 10px; border: 1px solid #2A2E39; }
-    </style>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+    .stApp { background-color: #0b0f19; font-family: 'Inter', sans-serif; color: #e2e8f0; }
+    h1, h2, h3 { color: #f8fafc; font-weight: 600; }
+    h1 { background: -webkit-linear-gradient(45deg, #4ade80, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;}
+    div[data-testid="stMetricValue"] { color: #ffffff; font-size: 2rem; font-weight: 800; }
+    div[data-testid="metric-container"] {
+        background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px; padding: 15px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+</style>
 """, unsafe_allow_html=True)
 
-st.title("⚡ Disciply.io — Prototipo de Gobernanza & D-Score")
-st.caption("Carga tu exportación de NinjaTrader para evaluar tu sesión diaria.")
+st.title("⚡ Disciply.io — Mentor Dashboard")
+st.markdown("Plataforma de gobernanza y seguimiento de disciplina para estudiantes.")
 
 DB_FILE = "disciply_sessions.csv"
 
-# Limpieza de valores numéricos de P&L
+# Datos simulados de estudiantes (para que el Dashboard no se vea vacío)
+STUDENTS = ["Carlos R.", "María F.", "Javier T.", "Ana Gómez", "Pedro H.", "TÚ (Admin)"]
+
 def parse_pnl_value(val):
-    if pd.isna(val):
-        return 0.0
+    if pd.isna(val): return 0.0
     val_str = str(val).strip().replace('$', '').replace(' ', '')
-    if ',' in val_str and '.' not in val_str:
-        val_str = val_str.replace(',', '.')
-    elif ',' in val_str and '.' in val_str:
-        val_str = val_str.replace(',', '')
-    if val_str.startswith('(') and val_str.endswith(')'):
-        val_str = '-' + val_str[1:-1]
-    try:
-        return float(val_str)
-    except:
-        return 0.0
+    if ',' in val_str and '.' not in val_str: val_str = val_str.replace(',', '.')
+    elif ',' in val_str and '.' in val_str: val_str = val_str.replace(',', '')
+    if val_str.startswith('(') and val_str.endswith(')'): val_str = '-' + val_str[1:-1]
+    try: return float(val_str)
+    except: return 0.0
 
-# --- MÓDULO 1: CARGA DE DATOS ---
-st.subheader("1. Importar Sesión de NinjaTrader")
-uploaded_file = st.file_uploader("Arrastra tu archivo CSV o TXT de NinjaTrader aquí", type=["csv", "txt"])
+# --- SISTEMA DE PESTAÑAS (TABS) ---
+tab1, tab2 = st.tabs(["🎓 Estado de Estudiantes (Admin)", "➕ Auditar Sesión a Estudiante"])
 
-pnl_auto = 0.0
-total_trades_auto = 0
-win_rate_auto = 0.0
-best_trade_auto = 0.0
-worst_trade_auto = 0.0
-
-if uploaded_file is not None:
-    try:
-        try:
-            df_nt = pd.read_csv(uploaded_file, sep=None, engine='python')
-        except:
-            uploaded_file.seek(0)
-            df_nt = pd.read_csv(uploaded_file, sep=';')
-        
-        profit_col = 'Profit' if 'Profit' in df_nt.columns else None
-        if not profit_col:
-            for col in df_nt.columns:
-                if 'profit' in str(col).lower() and 'cum' not in str(col).lower():
-                    profit_col = col
-                    break
-
-        if profit_col:
-            df_nt['pnl_clean'] = df_nt[profit_col].apply(parse_pnl_value)
-            group_cols = [c for c in ['Entry time', 'Exit time', 'Instrument'] if c in df_nt.columns]
-            
-            if group_cols:
-                trades_df = df_nt.groupby(group_cols, as_index=False)['pnl_clean'].sum()
-            else:
-                trades_df = df_nt[['pnl_clean']]
-
-            pnl_auto = float(trades_df['pnl_clean'].sum())
-            total_trades_auto = len(trades_df)
-            winning_trades = len(trades_df[trades_df['pnl_clean'] > 0])
-            win_rate_auto = (winning_trades / total_trades_auto * 100) if total_trades_auto > 0 else 0.0
-            best_trade_auto = float(trades_df['pnl_clean'].max())
-            worst_trade_auto = float(trades_df['pnl_clean'].min())
-            
-            st.success(f"✅ Archivo procesado con éxito: {total_trades_auto} trade(s) detectado(s).")
-        else:
-            st.error("⚠️ No se pudo encontrar la columna de ganancias.")
-    except Exception as e:
-        st.error(f"Error al leer el archivo: {e}")
-
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("P&L de la Sesión", f"${pnl_auto:,.2f}")
-col2.metric("Total Trades", f"{total_trades_auto}")
-col3.metric("Win Rate", f"{win_rate_auto:.1f}%")
-col4.metric("Mejor Trade", f"${best_trade_auto:,.2f}")
-col5.metric("Peor Trade", f"${worst_trade_auto:,.2f}")
-
-st.divider()
-
-# --- MÓDULO 2: EVALUACIÓN POR ESTRELLAS ---
-st.subheader("2. Evaluación Cualitativa (D-Score Engine)")
-st.info("Califica del 1 al 5 cada pilar (1 = Pésimo | 5 = Perfecto).")
-
-with st.form("d_score_form"):
-    session_date = st.date_input("Fecha de la Sesión", date.today())
-    setup_tag = st.text_input("Setup Principal (ej. PRT, TaN)", "PRT")
+# ==========================================
+# TAB 1: DASHBOARD DE MENTORA (ESTUDIANTES)
+# ==========================================
+with tab1:
+    st.subheader("Vista General de la Comunidad")
     
-    col_p1, col_p2, col_p3 = st.columns(3)
-    p1 = col_p1.radio("1. Gestión de Riesgo (Lotes/Stop Loss)", [1, 2, 3, 4, 5], index=4, horizontal=True)
-    p2 = col_p2.radio("2. Ejecución (Respeto al Setup)", [1, 2, 3, 4, 5], index=4, horizontal=True)
-    p3 = col_p3.radio("3. Emociones (Cero FOMO/Venganza)", [1, 2, 3, 4, 5], index=4, horizontal=True)
-    
-    col_p4, col_p5 = st.columns(2)
-    p4 = col_p4.radio("4. Frecuencia (Límite de Trades)", [1, 2, 3, 4, 5], index=4, horizontal=True)
-    p5 = col_p5.radio("5. Auditoría (Llenado de Bitácora)", [1, 2, 3, 4, 5], index=4, horizontal=True)
-    
-    notes = st.text_area("Notas Breves", "")
-    
-    # Conversión matemática: (25 puntos máximos) * 4 = 100
-    d_score_total = (p1 + p2 + p3 + p4 + p5) * 4
-    status = "PASS" if d_score_total >= 80 else "SIM-MODE"
-    
-    submit_button = st.form_submit_button("💾 Guardar Sesión")
-
-if submit_button:
-    new_data = pd.DataFrame([{
-        "Date": str(session_date),
-        "PnL": pnl_auto,
-        "Trades": total_trades_auto,
-        "Setup": setup_tag,
-        "D_Score": d_score_total,
-        "Status": status,
-        "Notes": notes
-    }])
-    
+    # 1. Leer la base de datos real (si existe)
     if os.path.exists(DB_FILE):
-        new_data.to_csv(DB_FILE, mode='a', header=False, index=False)
+        df_real = pd.read_csv(DB_FILE)
     else:
-        new_data.to_csv(DB_FILE, index=False)
+        df_real = pd.DataFrame(columns=["Student", "Date", "PnL", "Trades", "D_Score", "Status"])
+
+    # 2. Inyectar datos dummy para visualización (Mockup)
+    dummy_data = pd.DataFrame([
+        {"Student": "Carlos R.", "Date": "2026-08-19", "PnL": 450.00, "Trades": 2, "D_Score": 95, "Status": "PASS"},
+        {"Student": "María F.", "Date": "2026-08-19", "PnL": -150.00, "Trades": 1, "D_Score": 100, "Status": "PASS"},
+        {"Student": "Javier T.", "Date": "2026-08-19", "PnL": -850.00, "Trades": 8, "D_Score": 45, "Status": "SIM-MODE"},
+        {"Student": "Ana Gómez", "Date": "2026-08-19", "PnL": 120.00, "Trades": 3, "D_Score": 85, "Status": "PASS"}
+    ])
+    
+    # Unir datos simulados con los datos reales que vayas subiendo
+    df_dashboard = pd.concat([dummy_data, df_real], ignore_index=True) if not df_real.empty else dummy_data
+    
+    # Métricas Globales
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Estudiantes Activos", len(df_dashboard['Student'].unique()))
+    c2.metric("Promedio Global D-Score", f"{df_dashboard['D_Score'].mean():.0f}/100")
+    c3.metric("En Simulación (Castigados)", len(df_dashboard[df_dashboard['Status'] == 'SIM-MODE']))
+    c4.metric("P&L Total Comunidad", f"${df_dashboard['PnL'].sum():,.2f}")
+    
+    st.markdown("---")
+    
+    # Columnas para Gráfico y Tabla
+    col_chart, col_table = st.columns([1.5, 2])
+    
+    with col_chart:
+        st.markdown("#### Riesgo vs Disciplina")
+        fig = px.scatter(df_dashboard, x="D_Score", y="PnL", color="Status", 
+                         hover_name="Student", size_max=60, template="plotly_dark",
+                         color_discrete_map={"PASS": "#4ade80", "SIM-MODE": "#ef4444"})
+        fig.add_vline(x=80, line_dash="dash", line_color="gray", annotation_text="Límite Sim-Mode")
+        fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col_table:
+        st.markdown("#### Últimas Sesiones Auditadas")
         
-    st.balloons()
-    st.success(f"¡Sesión registrada! Tu D-Score de hoy es: {d_score_total}/100 | Estatus: {status}")
+        # Función para dar color al estatus en la tabla
+        def color_status(val):
+            color = '#4ade80' if val == 'PASS' else '#ef4444'
+            return f'color: {color}; font-weight: bold;'
+            
+        st.dataframe(
+            df_dashboard[['Student', 'Date', 'PnL', 'D_Score', 'Status']].sort_values(by="Date", ascending=False),
+            use_container_width=True,
+            hide_index=True
+        )
 
-st.divider()
+# ==========================================
+# TAB 2: AUDITORÍA (LO QUE YA CONSTRUIMOS)
+# ==========================================
+with tab2:
+    st.subheader("Auditar Sesión de NinjaTrader")
+    
+    # AHORA ELIGES A QUIÉN LE ASIGNAS EL ARCHIVO
+    selected_student = st.selectbox("👤 Asignar esta sesión al estudiante:", STUDENTS)
+    
+    uploaded_file = st.file_uploader("Sube el CSV de NinjaTrader", type=["csv", "txt"])
 
-# --- MÓDULO 3: HISTÓRICO ---
-st.subheader("3. Dashboard General & Histórico")
+    pnl_auto, total_trades_auto, win_rate_auto = 0.0, 0, 0.0
 
-if os.path.exists(DB_FILE):
-    df_hist = pd.read_csv(DB_FILE)
-    
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Sesiones Auditadas", len(df_hist))
-    m2.metric("Promedio D-Score", f"{df_hist['D_Score'].mean():.1f} / 100")
-    m3.metric("P&L Acumulado", f"${df_hist['PnL'].sum():,.2f}")
-    m4.metric("Días en SIM-Mode", len(df_hist[df_hist['Status'] == 'SIM-MODE']))
-    
-    fig = px.bar(df_hist, x="Date", y="PnL", color="D_Score", 
-                 title="Rendimiento Financiero (P&L) vs Disciplina (Color)",
-                 color_continuous_scale="RdYlGn", text="D_Score")
-    st.plotly_chart(fig, use_container_width=True)
-    
-    st.dataframe(df_hist.sort_values(by="Date", ascending=False), use_container_width=True)
+    if uploaded_file is not None:
+        try:
+            try: df_nt = pd.read_csv(uploaded_file, sep=None, engine='python')
+            except:
+                uploaded_file.seek(0)
+                df_nt = pd.read_csv(uploaded_file, sep=';')
+            
+            profit_col = 'Profit' if 'Profit' in df_nt.columns else None
+            if not profit_col:
+                for col in df_nt.columns:
+                    if 'profit' in str(col).lower() and 'cum' not in str(col).lower():
+                        profit_col = col; break
+
+            if profit_col:
+                df_nt['pnl_clean'] = df_nt[profit_col].apply(parse_pnl_value)
+                group_cols = [c for c in ['Entry time', 'Exit time', 'Instrument'] if c in df_nt.columns]
+                trades_df = df_nt.groupby(group_cols, as_index=False)['pnl_clean'].sum() if group_cols else df_nt[['pnl_clean']]
+
+                pnl_auto = float(trades_df['pnl_clean'].sum())
+                total_trades_auto = len(trades_df)
+                st.success(f"✅ Archivo procesado. Trades consolidados: {total_trades_auto}")
+        except Exception as e:
+            st.error(f"Error al leer: {e}")
+
+    # Formulario del D-Score
+    with st.form("d_score_form"):
+        st.markdown(f"**Evaluando a:** {selected_student}")
+        col_p1, col_p2, col_p3 = st.columns(3)
+        p1 = col_p1.radio("🛡️ Gestión de Riesgo", [1, 2, 3, 4, 5], index=4, horizontal=True)
+        p2 = col_p2.radio("🎯 Ejecución (Plan)", [1, 2, 3, 4, 5], index=4, horizontal=True)
+        p3 = col_p3.radio("🧘 Control Emocional", [1, 2, 3, 4, 5], index=4, horizontal=True)
+        
+        col_p4, col_p5 = st.columns([1, 2])
+        p4 = col_p4.radio("⏱️ Overtrading", [1, 2, 3, 4, 5], index=4, horizontal=True)
+        notes = col_p5.text_input("📝 Notas del Mentor", "")
+        
+        d_score_total = (p1 + p2 + p3 + p4) * 5 
+        status = "PASS" if d_score_total >= 80 else "SIM-MODE"
+        
+        submit_button = st.form_submit_button("Guardar Evaluación en Base de Datos")
+
+    if submit_button:
+        new_data = pd.DataFrame([{
+            "Student": selected_student,  # AHORA SE GUARDA EL NOMBRE DEL ESTUDIANTE
+            "Date": str(date.today()),
+            "PnL": pnl_auto,
+            "Trades": total_trades_auto,
+            "D_Score": d_score_total,
+            "Status": status,
+            "Notes": notes
+        }])
+        
+        if os.path.exists(DB_FILE):
+            new_data.to_csv(DB_FILE, mode='a', header=False, index=False)
+        else:
+            new_data.to_csv(DB_FILE, index=False)
+            
+        st.success(f"Registro guardado para {selected_student}. Revisa la pestaña 'Estado de Estudiantes'.")
