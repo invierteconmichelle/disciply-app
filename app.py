@@ -7,7 +7,7 @@ from datetime import date
 # Configuración de página
 st.set_page_config(page_title="Disciply.io - MVP Prototype", page_icon="⚡", layout="wide")
 
-# Estilo visual en Modo Oscuro (FinTech Look)
+# Estilo visual en Modo Oscuro
 st.markdown("""
     <style>
     .main { background-color: #0E1117; }
@@ -36,7 +36,7 @@ def parse_pnl_value(val):
     except:
         return 0.0
 
-# --- MÓDULO 1: CARGA DE DATOS DE NINJATRADER ---
+# --- MÓDULO 1: CARGA DE DATOS ---
 st.subheader("1. Importar Sesión de NinjaTrader")
 uploaded_file = st.file_uploader("Arrastra tu archivo CSV o TXT de NinjaTrader aquí", type=["csv", "txt"])
 
@@ -63,8 +63,6 @@ if uploaded_file is not None:
 
         if profit_col:
             df_nt['pnl_clean'] = df_nt[profit_col].apply(parse_pnl_value)
-            
-            # Agrupar contratos por entrada, salida e instrumento para formar trades únicos
             group_cols = [c for c in ['Entry time', 'Exit time', 'Instrument'] if c in df_nt.columns]
             
             if group_cols:
@@ -79,22 +77,12 @@ if uploaded_file is not None:
             best_trade_auto = float(trades_df['pnl_clean'].max())
             worst_trade_auto = float(trades_df['pnl_clean'].min())
             
-            st.success(f"✅ Archivo procesado con éxito: {total_trades_auto} trade(s) detectado(s) consolidando contratos.")
+            st.success(f"✅ Archivo procesado con éxito: {total_trades_auto} trade(s) detectado(s).")
         else:
-            st.warning("⚠️ Selecciona manualmente la columna de P&L:")
-            selected_col = st.selectbox("Columna de P&L:", df_nt.columns)
-            if selected_col:
-                df_nt['pnl_clean'] = df_nt[selected_col].apply(parse_pnl_value)
-                pnl_auto = float(df_nt['pnl_clean'].sum())
-                total_trades_auto = len(df_nt)
-                winning_trades = len(df_nt[df_nt['pnl_clean'] > 0])
-                win_rate_auto = (winning_trades / total_trades_auto * 100) if total_trades_auto > 0 else 0.0
-                best_trade_auto = float(df_nt['pnl_clean'].max())
-                worst_trade_auto = float(df_nt['pnl_clean'].min())
+            st.error("⚠️ No se pudo encontrar la columna de ganancias.")
     except Exception as e:
-        st.error(f"Error al leer el archivo de NinjaTrader: {e}")
+        st.error(f"Error al leer el archivo: {e}")
 
-# Métrica Cuantitativa
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("P&L de la Sesión", f"${pnl_auto:,.2f}")
 col2.metric("Total Trades", f"{total_trades_auto}")
@@ -104,29 +92,30 @@ col5.metric("Peor Trade", f"${worst_trade_auto:,.2f}")
 
 st.divider()
 
-# --- MÓDULO 2: RÚBRICA CUALITATIVA DEL D-SCORE ---
+# --- MÓDULO 2: EVALUACIÓN POR ESTRELLAS ---
 st.subheader("2. Evaluación Cualitativa (D-Score Engine)")
-st.info("Califica cada pilar del 0 al 20 según la ejecución de tus reglas hoy.")
+st.info("Califica del 1 al 5 cada pilar (1 = Pésimo | 5 = Perfecto).")
 
 with st.form("d_score_form"):
     session_date = st.date_input("Fecha de la Sesión", date.today())
-    setup_tag = st.text_input("Setup / Etiqueta Principal (ej. PRT, TaN, Breakout)", "PRT")
+    setup_tag = st.text_input("Setup Principal (ej. PRT, TaN)", "PRT")
     
     col_p1, col_p2, col_p3 = st.columns(3)
-    p1 = col_p1.slider("Pilar 1: Gestión de Riesgo (¿Respetaste el Stop Loss/Lotaje?)", 0, 20, 20)
-    p2 = col_p2.slider("Pilar 2: Ejecución del Plan (¿Entraste según reglas?)", 0, 20, 20)
-    p3 = col_p3.slider("Pilar 3: Control Emocional (¿Cero Venganza/FOMO?)", 0, 20, 20)
+    p1 = col_p1.radio("1. Gestión de Riesgo (Lotes/Stop Loss)", [1, 2, 3, 4, 5], index=4, horizontal=True)
+    p2 = col_p2.radio("2. Ejecución (Respeto al Setup)", [1, 2, 3, 4, 5], index=4, horizontal=True)
+    p3 = col_p3.radio("3. Emociones (Cero FOMO/Venganza)", [1, 2, 3, 4, 5], index=4, horizontal=True)
     
     col_p4, col_p5 = st.columns(2)
-    p4 = col_p4.slider("Pilar 4: Límite de Frecuencia (¿Respetaste máximo de trades?)", 0, 20, 20)
-    p5 = col_p5.slider("Pilar 5: Bitácora & Notas (¿Documentaste el contexto?)", 0, 20, 20)
+    p4 = col_p4.radio("4. Frecuencia (Límite de Trades)", [1, 2, 3, 4, 5], index=4, horizontal=True)
+    p5 = col_p5.radio("5. Auditoría (Llenado de Bitácora)", [1, 2, 3, 4, 5], index=4, horizontal=True)
     
-    notes = st.text_area("Notas / Observaciones de la Sesión", "")
+    notes = st.text_area("Notas Breves", "")
     
-    d_score_total = p1 + p2 + p3 + p4 + p5
+    # Conversión matemática: (25 puntos máximos) * 4 = 100
+    d_score_total = (p1 + p2 + p3 + p4 + p5) * 4
     status = "PASS" if d_score_total >= 80 else "SIM-MODE"
     
-    submit_button = st.form_submit_button("💾 Guardar Sesión en Disciply")
+    submit_button = st.form_submit_button("💾 Guardar Sesión")
 
 if submit_button:
     new_data = pd.DataFrame([{
@@ -136,11 +125,6 @@ if submit_button:
         "Setup": setup_tag,
         "D_Score": d_score_total,
         "Status": status,
-        "P1_Risk": p1,
-        "P2_Plan": p2,
-        "P3_Emotions": p3,
-        "P4_Freq": p4,
-        "P5_Journal": p5,
         "Notes": notes
     }])
     
@@ -154,8 +138,8 @@ if submit_button:
 
 st.divider()
 
-# --- MÓDULO 3: DASHBOARD HISTÓRICO Y ANÁLISIS ---
-st.subheader("3. Dashboard General & Histórico de Disciplina")
+# --- MÓDULO 3: HISTÓRICO ---
+st.subheader("3. Dashboard General & Histórico")
 
 if os.path.exists(DB_FILE):
     df_hist = pd.read_csv(DB_FILE)
@@ -167,11 +151,8 @@ if os.path.exists(DB_FILE):
     m4.metric("Días en SIM-Mode", len(df_hist[df_hist['Status'] == 'SIM-MODE']))
     
     fig = px.bar(df_hist, x="Date", y="PnL", color="D_Score", 
-                 title="Relación entre D-Score (Color) y Rendimiento Financiero (P&L)",
+                 title="Rendimiento Financiero (P&L) vs Disciplina (Color)",
                  color_continuous_scale="RdYlGn", text="D_Score")
     st.plotly_chart(fig, use_container_width=True)
     
-    st.write("### Histórico de Registros")
     st.dataframe(df_hist.sort_values(by="Date", ascending=False), use_container_width=True)
-else:
-    st.info("Aún no has guardado ninguna sesión. Procesa tu primer archivo para comenzar a construir tu histórico.")
