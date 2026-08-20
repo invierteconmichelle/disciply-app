@@ -20,11 +20,18 @@ st.caption("Carga tu exportación de NinjaTrader para evaluar tu sesión diaria.
 
 DB_FILE = "disciply_sessions.csv"
 
-# Limpieza profunda de montos P&L
+# Función de limpieza precisa para formatos decimales con comas (-41,04 $)
 def parse_pnl_value(val):
     if pd.isna(val):
         return 0.0
-    val_str = str(val).strip().replace('$', '').replace(',', '')
+    val_str = str(val).strip().replace('$', '').replace(' ', '')
+    
+    # Manejo de coma como separador decimal
+    if ',' in val_str and '.' not in val_str:
+        val_str = val_str.replace(',', '.')
+    elif ',' in val_str and '.' in val_str:
+        val_str = val_str.replace(',', '')
+        
     if val_str.startswith('(') and val_str.endswith(')'):
         val_str = '-' + val_str[1:-1]
     try:
@@ -44,25 +51,24 @@ worst_trade_auto = 0.0
 
 if uploaded_file is not None:
     try:
-        # Detectar automáticamente si el archivo usa comas, puntos y comas (;) o tabulaciones
+        # Detectar separador (punto y coma de NinjaTrader)
         try:
             df_nt = pd.read_csv(uploaded_file, sep=None, engine='python')
         except:
             uploaded_file.seek(0)
             df_nt = pd.read_csv(uploaded_file, sep=';')
         
-        # Búsqueda flexible de columna de P&L en NinjaTrader
-        pnl_keywords = ['cum. net profit', 'profit', 'p&l', 'p/l', 'ganancia', 'beneficio', 'pnl', 'net', 'amount']
+        # Priorizar la columna 'Profit' individual sobre 'Cum. net profit'
         profit_col = None
-        
-        for kw in pnl_keywords:
+        if 'Profit' in df_nt.columns:
+            profit_col = 'Profit'
+        else:
+            pnl_keywords = ['profit', 'p&l', 'ganancia', 'pnl']
             for col in df_nt.columns:
-                if kw in str(col).lower():
+                if any(kw in str(col).lower() for kw in pnl_keywords) and 'cum' not in str(col).lower():
                     profit_col = col
                     break
-            if profit_col:
-                break
-        
+
         if profit_col:
             df_nt['pnl_clean'] = df_nt[profit_col].apply(parse_pnl_value)
             
@@ -73,9 +79,9 @@ if uploaded_file is not None:
             best_trade_auto = float(df_nt['pnl_clean'].max())
             worst_trade_auto = float(df_nt['pnl_clean'].min())
             
-            st.success(f"✅ Archivo procesado con éxito ({total_trades_auto} trades detectados en columna '{profit_col}').")
+            st.success(f"✅ Archivo procesado con éxito ({total_trades_auto} trades en columna '{profit_col}').")
         else:
-            st.warning("⚠️ Selecciona manualmente la columna que contiene las ganancias/pérdidas:")
+            st.warning("⚠️ Selecciona manualmente la columna de P&L:")
             selected_col = st.selectbox("Columna de P&L:", df_nt.columns)
             if selected_col:
                 df_nt['pnl_clean'] = df_nt[selected_col].apply(parse_pnl_value)
