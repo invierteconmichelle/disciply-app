@@ -20,6 +20,18 @@ st.caption("Carga tu exportación de NinjaTrader para evaluar tu sesión diaria.
 
 DB_FILE = "disciply_sessions.csv"
 
+# Función de limpieza profunda para montos de P&L
+def parse_pnl_value(val):
+    if pd.isna(val):
+        return 0.0
+    val_str = str(val).strip().replace('$', '').replace(',', '')
+    if val_str.startswith('(') and val_str.endswith(')'):
+        val_str = '-' + val_str[1:-1]
+    try:
+        return float(val_str)
+    except:
+        return 0.0
+
 # --- MÓDULO 1: CARGA DE DATOS DE NINJATRADER ---
 st.subheader("1. Importar Sesión de NinjaTrader")
 uploaded_file = st.file_uploader("Arrastra tu archivo CSV o TXT de NinjaTrader aquí", type=["csv", "txt"])
@@ -34,33 +46,42 @@ if uploaded_file is not None:
     try:
         df_nt = pd.read_csv(uploaded_file)
         
-        # Detectar columna de Profit en NinjaTrader (Profit, Profit ($), Cum. profit, etc.)
-        profit_col = [col for col in df_nt.columns if 'profit' in col.lower() or 'p&l' in col.lower()]
+        # Búsqueda flexible de columna de P&L
+        pnl_keywords = ['profit', 'p&l', 'p/l', 'ganancia', 'beneficio', 'pnl', 'net', 'amount']
+        profit_col = None
+        for col in df_nt.columns:
+            if any(kw in str(col).lower() for kw in pnl_keywords):
+                profit_col = col
+                break
         
         if profit_col:
-            col_name = profit_col[0]
-            # Limpieza de formato de moneda ($ y comas)
-            if df_nt[col_name].dtype == object:
-                df_nt[col_name] = df_nt[col_name].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False)
+            df_nt['pnl_clean'] = df_nt[profit_col].apply(parse_pnl_value)
             
-            df_nt[col_name] = pd.to_numeric(df_nt[col_name], errors='coerce').fillna(0)
-            
-            pnl_auto = float(df_nt[col_name].sum())
+            pnl_auto = float(df_nt['pnl_clean'].sum())
             total_trades_auto = len(df_nt)
-            winning_trades = len(df_nt[df_nt[col_name] > 0])
+            winning_trades = len(df_nt[df_nt['pnl_clean'] > 0])
             win_rate_auto = (winning_trades / total_trades_auto * 100) if total_trades_auto > 0 else 0.0
-            best_trade_auto = float(df_nt[col_name].max())
-            worst_trade_auto = float(df_nt[col_name].min())
+            best_trade_auto = float(df_nt['pnl_clean'].max())
+            worst_trade_auto = float(df_nt['pnl_clean'].min())
             
-            st.success(f"✅ Archivo procesado con éxito: {total_trades_auto} trades detectados.")
+            st.success(f"✅ Archivo procesado con éxito ({total_trades_auto} trades detectados usando columna '{profit_col}').")
         else:
-            st.warning("⚠️ No se detectó automáticamente la columna de P&L. Puedes ingresar los datos manualmente abajo.")
+            st.warning("⚠️ No se detectó la columna de P&L automáticamente. Selecciona la columna correspondiente:")
+            selected_col = st.selectbox("Selecciona la columna que contiene las ganancias/pérdidas:", df_nt.columns)
+            if selected_col:
+                df_nt['pnl_clean'] = df_nt[selected_col].apply(parse_pnl_value)
+                pnl_auto = float(df_nt['pnl_clean'].sum())
+                total_trades_auto = len(df_nt)
+                winning_trades = len(df_nt[df_nt['pnl_clean'] > 0])
+                win_rate_auto = (winning_trades / total_trades_auto * 100) if total_trades_auto > 0 else 0.0
+                best_trade_auto = float(df_nt['pnl_clean'].max())
+                worst_trade_auto = float(df_nt['pnl_clean'].min())
     except Exception as e:
         st.error(f"Error al leer el archivo de NinjaTrader: {e}")
 
 # Métrica Cuantitativa
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("P&L de la Sesión", f"${pnl_auto:,.2f}", delta_color="normal")
+col1.metric("P&L de la Sesión", f"${pnl_auto:,.2f}")
 col2.metric("Total Trades", f"{total_trades_auto}")
 col3.metric("Win Rate", f"{win_rate_auto:.1f}%")
 col4.metric("Mejor Trade", f"${best_trade_auto:,.2f}")
@@ -130,7 +151,6 @@ if os.path.exists(DB_FILE):
     m3.metric("P&L Acumulado", f"${df_hist['PnL'].sum():,.2f}")
     m4.metric("Días en SIM-Mode", len(df_hist[df_hist['Status'] == 'SIM-MODE']))
     
-    # Gráfico de Correlación: D-Score vs P&L
     fig = px.bar(df_hist, x="Date", y="PnL", color="D_Score", 
                  title="Relación entre D-Score (Color) y Rendimiento Financiero (P&L)",
                  color_continuous_scale="RdYlGn", text="D_Score")
