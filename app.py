@@ -20,7 +20,7 @@ st.caption("Carga tu exportación de NinjaTrader para evaluar tu sesión diaria.
 
 DB_FILE = "disciply_sessions.csv"
 
-# Función de limpieza profunda para montos de P&L
+# Limpieza profunda de montos P&L
 def parse_pnl_value(val):
     if pd.isna(val):
         return 0.0
@@ -44,14 +44,23 @@ worst_trade_auto = 0.0
 
 if uploaded_file is not None:
     try:
-        df_nt = pd.read_csv(uploaded_file)
+        # Detectar automáticamente si el archivo usa comas, puntos y comas (;) o tabulaciones
+        try:
+            df_nt = pd.read_csv(uploaded_file, sep=None, engine='python')
+        except:
+            uploaded_file.seek(0)
+            df_nt = pd.read_csv(uploaded_file, sep=';')
         
-        # Búsqueda flexible de columna de P&L
-        pnl_keywords = ['profit', 'p&l', 'p/l', 'ganancia', 'beneficio', 'pnl', 'net', 'amount']
+        # Búsqueda flexible de columna de P&L en NinjaTrader
+        pnl_keywords = ['cum. net profit', 'profit', 'p&l', 'p/l', 'ganancia', 'beneficio', 'pnl', 'net', 'amount']
         profit_col = None
-        for col in df_nt.columns:
-            if any(kw in str(col).lower() for kw in pnl_keywords):
-                profit_col = col
+        
+        for kw in pnl_keywords:
+            for col in df_nt.columns:
+                if kw in str(col).lower():
+                    profit_col = col
+                    break
+            if profit_col:
                 break
         
         if profit_col:
@@ -64,10 +73,10 @@ if uploaded_file is not None:
             best_trade_auto = float(df_nt['pnl_clean'].max())
             worst_trade_auto = float(df_nt['pnl_clean'].min())
             
-            st.success(f"✅ Archivo procesado con éxito ({total_trades_auto} trades detectados usando columna '{profit_col}').")
+            st.success(f"✅ Archivo procesado con éxito ({total_trades_auto} trades detectados en columna '{profit_col}').")
         else:
-            st.warning("⚠️ No se detectó la columna de P&L automáticamente. Selecciona la columna correspondiente:")
-            selected_col = st.selectbox("Selecciona la columna que contiene las ganancias/pérdidas:", df_nt.columns)
+            st.warning("⚠️ Selecciona manualmente la columna que contiene las ganancias/pérdidas:")
+            selected_col = st.selectbox("Columna de P&L:", df_nt.columns)
             if selected_col:
                 df_nt['pnl_clean'] = df_nt[selected_col].apply(parse_pnl_value)
                 pnl_auto = float(df_nt['pnl_clean'].sum())
